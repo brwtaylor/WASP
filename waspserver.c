@@ -836,7 +836,7 @@ main (int argc, const char *argv[])
     poptContext optCon;		// context for parsing command-line options
     const struct poptOption optionsTable[] = {
 	 // *INDENT-OFF*
-         { "bind", 0, POPT_ARG_STRING | (binding ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &binding, 0, "Port to bind", "[hosname:]port"},
+         { "bind", 0, POPT_ARG_STRING | (binding ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &binding, 0, "Port to bind", "[hostname#]port"},
          { "cert", 'c', POPT_ARG_STRING | (certfile ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &certfile, 0, "wss-cert", "filename"},
          { "key", 'k', POPT_ARG_STRING | (keyfile ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &keyfile, 0, "wss-key", "filename"},
          { "connect", 'C', POPT_ARG_STRING | (connectscript ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &connectscript, 0, "connect", "filename"},
