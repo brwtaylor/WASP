@@ -63,6 +63,11 @@ char *disconnectscript = quoted (DISCONNECT);
 char *disconnectscript = NULL;
 #endif
 
+int statchannel = 0;
+int statsession = 0;
+int statlink = 0;
+int statqueue=0;
+
 // Types
 typedef struct q_s q_t;
 typedef struct wasp_session_s wasp_session_t;
@@ -155,6 +160,7 @@ make_channel (const char *cid)
   c = malloc (sizeof (*c));
   if (!c)
     errx (1, "malloc");
+  statchannel++;
   memset (c, 0, sizeof (*c));
   c->cid = strdup (cid);
   c->prev = &channels;
@@ -182,6 +188,7 @@ link_channel (wasp_session_t * s, wasp_channel_t * c)
       l = malloc (sizeof (*l));
       if (!l)
 	errx (1, "malloc");
+      statlink++;
       memset (l, 0, sizeof (*l));
       // Link in to sessions
       l->channel = c;
@@ -232,15 +239,19 @@ unlink_channel (wasp_chanlink_t * l)
     l->snext->sprev = l->sprev;
   *l->sprev = l->snext;
   // Free
+  statlink--;
   free (l);
   // Clean up channel
   if (!--c->count)
     {				// Dead channel
       if (debug)
 	warnx ("%s Channel deleted", c->cid);
+      // Unlink
       if (c->next)
 	c->next->prev = c->prev;
       *c->prev = c->next;
+      statchannel--;
+      // Free
       if (c->ws)
 	free (c->ws);
       free (c->cid);
@@ -608,6 +619,7 @@ wasp_disconnect (wasp_session_t * s)
   if (r)
     free (r);
   pthread_mutex_lock (&sessionmutex);
+  statsession--;
   // Unlink from sessions
   if (s->next)
     s->next->prev = s->prev;
@@ -799,6 +811,8 @@ q_thread (void *p)
 	  if (l < 0)
 	    err (1, "q pipe failed");
 	}
+      if (debug)
+	fprintf (stderr, "Session %d Channel %d Link %d\n", statsession, statchannel, statlink);
       volatile q_t *q = NULL;
       if (queue)
 	{			// Get from head of queue
@@ -818,6 +832,7 @@ q_thread (void *p)
 	wasp_message (q->session, q->len, q->data);
       else if (!q->head && !q->data)
 	wasp_disconnect (q->session);
+      statqueue--;
       if (q->head)
 	xml_tree_delete (q->head);
       if (q->data)
@@ -931,6 +946,7 @@ main (int argc, const char *argv[])
 	s = malloc (sizeof (*s));
 	if (!s)
 	  errx (1, "Malloc");
+	statsession++;
 	memset (s, 0, sizeof (*s));
 	tokens (s->sid, sizeof (s->sid) - 1);
 	s->ws = w;
@@ -959,11 +975,14 @@ main (int argc, const char *argv[])
       }
     pthread_mutex_lock (&qmutex);
     volatile q_t *q = malloc (sizeof (*q));
+    if (!q)
+      errx (1, "malloc");
+    statqueue++;
+    memset ((q_t*)q, 0, sizeof (*q));
     q->session = s;
     q->head = head;
     q->len = datalen;
     q->data = data;
-    q->next = NULL;
     if (queue)
       queueend->next = q;
     else
