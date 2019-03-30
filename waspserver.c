@@ -48,17 +48,26 @@ char *keyfile = quoted (KEY);
 char *keyfile = NULL;
 #endif
 #ifdef	CONNECT
-char *connectscript = quoted (CONNECT);
+extern int CONNECT (const char *sid, xml_t head);
+#endif
+#ifdef	CONNECTSCRIPT
+char *connectscript = quoted (CONNECTSCRIPT);
 #else
 char *connectscript = NULL;
 #endif
 #ifdef	MESSAGE
-char *messagescript = quoted (MESSAGE);
+extern int MESSAGE (const char *sid, size_t len, const unsigned char *data);
+#endif
+#ifdef	MESSAGESCRIPT
+char *messagescript = quoted (MESSAGESCRIPT);
 #else
 char *messagescript = NULL;
 #endif
 #ifdef	DISCONNECT
-char *disconnectscript = quoted (DISCONNECT);
+extern int DISCONNECT (const char *sid, const char *id);
+#endif
+#ifdef	DISCONNECTSCRIPT
+char *disconnectscript = quoted (DISCONNECTSCRIPT);
 #else
 char *disconnectscript = NULL;
 #endif
@@ -583,7 +592,11 @@ wasp_connect (wasp_session_t * s, xml_t head)
       warnx ("%s connect %s", s->sid, xml_get (head, "@IP"));
    link_channel (s, make_channel (s->sid));     // SID is logically a channel
    // Call connect
-   char *r = wasp_script (s, connectscript, head, 0, NULL);
+   char *r = NULL;
+#ifdef	CONNECT
+   if (CONNECT (s->sid, head))  // Only run script if return non zero
+#endif
+      r = wasp_script (s, connectscript, head, 0, NULL);
    if (!r)
    {                            // Failed
       syslog (LOG_INFO, "%s connect failed, disconnecting", s->sid);
@@ -592,7 +605,7 @@ wasp_connect (wasp_session_t * s, xml_t head)
          warnx ("Bad disconnect %s", e);
       return;
    }
-   // Add  identifier to channel
+   // Add identifier to channel
    if (*r)
    {
       link_channel (s, make_channel (r));
@@ -608,7 +621,11 @@ wasp_message (wasp_session_t * s, size_t len, const unsigned char *data)
 {
    if (debug)
       warnx ("%s message [%.*s]", s->sid, (int) len, data);
-   char *r = wasp_script (s, messagescript, NULL, len, data);
+   char *r = NULL;
+#ifdef	MESSAGE
+   if (MESSAGE (s->sid, len, data))     // Only run script if return non zero
+#endif
+      r = wasp_script (s, messagescript, NULL, len, data);
    if (r)
       free (r);
 }
@@ -618,7 +635,11 @@ wasp_disconnect (wasp_session_t * s)
 {
    if (debug)
       warnx ("%s disconnect", s->sid);
-   char *r = wasp_script (s, disconnectscript, NULL, 0, NULL);
+   char *r = NULL;
+#ifdef	DISCONNECT
+   if (DISCONNECT (s->sid, s->id))      // Only run script if return non zero
+#endif
+      r = wasp_script (s, disconnectscript, NULL, 0, NULL);
    if (r)
       free (r);
    pthread_mutex_lock (&sessionmutex);
@@ -633,46 +654,21 @@ wasp_disconnect (wasp_session_t * s)
    pthread_mutex_unlock (&sessionmutex);
 }
 
-static const char *
-wasp_command (xml_t head, size_t len, const unsigned char *data)
-{                               // Run command, return static error, consume data
-   // Check localhost
-   char *v = xml_get (head, "@IP");
-   if (strcmp (v, "127.0.0.1") && strcmp (v, "::1"))
-   {
-      if (debug)
-         warnx ("Access from %s", v);
-      return "Invalid";
-   }
+const char *
+wasp_command (const char *target, const char *cmd, size_t len, const unsigned char *data)
+{                               // Do a command (can be used by connect/disconnect/message)
    int exists = 0;
-   // Extract command and target
-   char *cmd = xml_get (head, "http");
-   if (cmd && *cmd == '/')
-      cmd++;
    if (cmd && *cmd == '*')
    {
       exists = 1;
       cmd++;
    }
    if (!cmd || !*cmd)
-   {
-      if (data)
-         free ((char *) data);
       return "Missing command";
-   }
-   char *target = xml_get (head, "query");
-   if (!target || !*target)
-   {
-      if (data)
-         free ((char *) data);
-      return "Missing target";
-   }
    // Find target
    wasp_channel_t *t = find_channel (target);
    if (!t || !t->sessions)
    {                            // Error depends if exists
-      if (data)
-         free ((char *) data);
       if (exists)
          return "Unknown channel";      // Check exists
       if (debug)
@@ -798,6 +794,34 @@ wasp_command (xml_t head, size_t len, const unsigned char *data)
    if (data)
       free ((char *) data);
    return "Unknown command";
+}
+
+static const char *
+wasp_web_command (xml_t head, size_t len, const unsigned char *data)
+{                               // Run command, return static error, consume data
+   // Check localhost
+   char *v = xml_get (head, "@IP");
+   if (strcmp (v, "127.0.0.1") && strcmp (v, "::1"))
+   {
+      if (debug)
+         warnx ("Access from %s", v);
+      return "Invalid";
+   }
+   // Extract command and target
+   const char *cmd = xml_get (head, "http");
+   if (cmd && *cmd == '/')
+      cmd++;
+   const char *target = xml_get (head, "query");
+   if (!target || !*target)
+   {
+      if (data)
+         free ((char *) data);
+      return "Missing target";
+   }
+   const char *e = wasp_command (target, cmd, len, data);
+   if (data)
+      free ((char *) data);
+   return e;
 }
 
 void *
@@ -940,7 +964,7 @@ main (int argc, const char *argv[])
    {                            // Single threaded callback from web sockets (wrapped in main mutex)
       if (!w && head)
       {                         // Direct run commands
-         const char *e = wasp_command (head, datalen, data);
+         const char *e = wasp_web_command (head, datalen, data);
          if (e && debug)
             warnx ("Command failed %s", e);
          if (e)
