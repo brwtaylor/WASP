@@ -48,7 +48,7 @@ char *keyfile = quoted (KEY);
 char *keyfile = NULL;
 #endif
 #ifdef	CONNECT
-extern int CONNECT (const char *sid, xml_t head);
+extern int CONNECT (const char *sid, char **id, xml_t head);
 #endif
 #ifdef	CONNECTSCRIPT
 char *connectscript = quoted (CONNECTSCRIPT);
@@ -56,7 +56,7 @@ char *connectscript = quoted (CONNECTSCRIPT);
 char *connectscript = NULL;
 #endif
 #ifdef	MESSAGE
-extern int MESSAGE (const char *sid, size_t len, const unsigned char *data);
+extern int MESSAGE (const char *sid, const char *id, size_t len, const unsigned char *data);
 #endif
 #ifdef	MESSAGESCRIPT
 char *messagescript = quoted (MESSAGESCRIPT);
@@ -594,7 +594,7 @@ wasp_connect (wasp_session_t * s, xml_t head)
    // Call connect
    char *r = NULL;
 #ifdef	CONNECT
-   if (CONNECT (s->sid, head))  // Only run script if return non zero
+   if (CONNECT (s->sid, &r, head))      // Only run script if return non zero
 #endif
       r = wasp_script (s, connectscript, head, 0, NULL);
    if (!r)
@@ -623,7 +623,7 @@ wasp_message (wasp_session_t * s, size_t len, const unsigned char *data)
       warnx ("%s message [%.*s]", s->sid, (int) len, data);
    char *r = NULL;
 #ifdef	MESSAGE
-   if (MESSAGE (s->sid, len, data))     // Only run script if return non zero
+   if (MESSAGE (s->sid, s->id, len, data))      // Only run script if return non zero
 #endif
       r = wasp_script (s, messagescript, NULL, len, data);
    if (r)
