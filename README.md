@@ -11,3 +11,5 @@ The waspserver can easily be run indirectly through apache
 The wasp command allows messages to be sent to the connected sessions.
 
 See manual for full details
+
+(c) Copyright 2018 Andrews & Arnold Ltd, Adrian Kennard. See LICENSE file (GPL)
