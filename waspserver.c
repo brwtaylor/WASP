@@ -656,7 +656,7 @@ wasp_disconnect (wasp_session_t * s)
 
 const char *
 wasp_command (const char *target, const char *cmd, size_t len, const unsigned char *data)
-{                               // Do a command (can be used by connect/disconnect/message)
+{                               // Do a command (can be used by connect/disconnect/message) - consumes data
    int exists = 0;
    if (cmd && *cmd == '*')
    {
@@ -664,11 +664,17 @@ wasp_command (const char *target, const char *cmd, size_t len, const unsigned ch
       cmd++;
    }
    if (!cmd || !*cmd)
+   {
+      if (data)
+         free ((char *) data);
       return "Missing command";
+   }
    // Find target
    wasp_channel_t *t = find_channel (target);
    if (!t || !t->sessions)
    {                            // Error depends if exists
+      if (data)
+         free ((char *) data);
       if (exists)
          return "Unknown channel";      // Check exists
       if (debug)
@@ -818,9 +824,7 @@ wasp_web_command (xml_t head, size_t len, const unsigned char *data)
          free ((char *) data);
       return "Missing target";
    }
-   const char *e = wasp_command (target, cmd, len, data);
-   if (data)
-      free ((char *) data);
+   const char *e = wasp_command (target, cmd, len, data);       // Consumes data
    return e;
 }
 
