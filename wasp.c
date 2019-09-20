@@ -56,14 +56,14 @@ main (int argc, const char *argv[])
          {"target", 't', POPT_ARG_STRING, &exists, 0, "Target", "channel/id"},
          {"json", 'j', POPT_ARG_STRING, &jsonfile, 0, "JSON send", "filename"},
          {"send", 's', POPT_ARG_STRING, &sendfile, 0, "Raw Send", "filename"},
-         {"exists", 'e', POPT_ARG_NONE, &exists, 0, "Exists flag",NULL},
-         {"disconnect", 'd', POPT_ARG_NONE, &disconnect, 0, "Send disconnect",NULL},
-         {"add", 'a', POPT_ARG_NONE, &add, 0, "Add to channels",NULL},
-         {"remove", 'r', POPT_ARG_NONE, &remove, 0, "Remove from channels",NULL},
-         {"clear", 'c', POPT_ARG_NONE, &clear, 0, "Clear channels",NULL},
+         {"exists", 'e', POPT_ARG_NONE, &exists, 0, "Exists flag", NULL},
+         {"disconnect", 'd', POPT_ARG_NONE, &disconnect, 0, "Send disconnect", NULL},
+         {"add", 'a', POPT_ARG_NONE, &add, 0, "Add to channels", NULL},
+         {"remove", 'r', POPT_ARG_NONE, &remove, 0, "Remove from channels", NULL},
+         {"clear", 'c', POPT_ARG_NONE, &clear, 0, "Clear channels", NULL},
          {"port", 'p', POPT_ARG_STRING | (port ? POPT_ARGFLAG_SHOW_DEFAULT : 0), &port, 0, "Port", "port"},
-         {"tls", 0, POPT_ARG_NONE | (tls ? POPT_ARGFLAG_DOC_HIDDEN : 0), &tls, 0, "Use TLS",NULL},
-         {"debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug",NULL},
+         {"tls", 0, POPT_ARG_NONE | (tls ? POPT_ARGFLAG_DOC_HIDDEN : 0), &tls, 0, "Use TLS", NULL},
+         {"debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug", NULL},
          POPT_AUTOHELP {}
       };
 
@@ -180,7 +180,9 @@ main (int argc, const char *argv[])
                } else if (*d == '@')
                {                // Name string from filename
                   *d++ = 0;
-                  int f = open (d, O_RDONLY);
+                  int f = fileno (stdin);
+                  if (strcmp (d, "-"))
+                     f = open (d, O_RDONLY);
                   if (f < 0)
                      err (1, "Cannot open %s", d);
                   char *val = NULL;
