@@ -1,6 +1,9 @@
 [submodule "websocket"]
 	path = websocket
 	url = ssh://git@github.com/revk/websocket.git
+[submodule "AXL"]
+	path = AXL
+	url = ssh://git@github.com/revk/AXL.git
 [submodule "AJL"]
 	path = AJL
 	url = https://github.com/revk/AJL
