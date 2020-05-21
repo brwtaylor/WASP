@@ -21,7 +21,7 @@
 #include <err.h>
 #include <signal.h>
 #include <curl/curl.h>
-#include <axl.h>
+#include <ajl.h>
 
 // Main config
 #define xquoted(x)      #x
@@ -76,8 +76,7 @@ main (int argc, const char *argv[])
 
       if (!target && poptPeekArg (optCon))
          target = poptGetArg (optCon);
-      if (!target || (jsonfile && sendfile) || (add && remove) || (clear && remove)
-          || ((add || remove || clear) && (jsonfile || sendfile)))
+      if (!target || (jsonfile && sendfile) || (add && remove) || (clear && remove) || ((add || remove || clear) && (jsonfile || sendfile)))
       {
          poptPrintUsage (optCon, stderr, 0);
          return -1;
@@ -95,9 +94,7 @@ main (int argc, const char *argv[])
    size_t requestlen = 0;
    FILE *o = open_memstream (&request, &requestlen);
    char *url = NULL;
-   if (asprintf
-       (&url, "http%s://localhost:%s/%s%s?%s", tls ? "s" : "", port, exists ? "*" : "",
-        clear ? "clear" : add ? "add" : remove ? "remove" : disconnect ? "disconnect" : "message", target) < 0)
+   if (asprintf (&url, "http%s://localhost:%s/%s%s?%s", tls ? "s" : "", port, exists ? "*" : "", clear ? "clear" : add ? "add" : remove ? "remove" : disconnect ? "disconnect" : "message", target) < 0)
       errx (1, "malloc");
    if (add || remove || clear)
    {                            // Channels
@@ -120,7 +117,7 @@ main (int argc, const char *argv[])
             close (f);
       } else if (jsonfile || poptPeekArg (optCon))
       {
-         xml_t xml = NULL;
+         j_t json = j_create ();
          if (jsonfile)
          {                      // Send JSON
             FILE *f = stdin;
@@ -128,18 +125,10 @@ main (int argc, const char *argv[])
                f = fopen (jsonfile, "r");
             if (!f)
                err (1, "Cannot open %s", jsonfile);
-            xml = xml_tree_read_json (f, NULL);
-            if (!xml)
-            {
-               rewind (f);      // Messy for stdin
-               xml = xml_tree_read (f);
-            }
-            if (!xml)
-               errx (1, "Cannot read/parse %s", jsonfile);
-            if (f != stdin)
-               fclose (f);
-         } else
-            xml = xml_tree_new ("json");
+            const char *er = j_read (json, f);
+            if (er)
+               errx (1, "Cannot read/parse %s: %s", jsonfile, er);
+         }
          if (poptPeekArg (optCon))
          {                      // Construct message
             while (poptPeekArg (optCon))
@@ -152,31 +141,20 @@ main (int argc, const char *argv[])
                if (*d == '=')
                {                // Name=Value
                   *d++ = 0;
-                  xml_t e = xml_element_add (xml, c);
-                  e->json_single = 1;
-                  xml_element_set_content (e, d);
+                  j_add_string (json, c, d);
                } else if (*d == '#')
                {                // Name=Value (unquoted) e.g. numeric, boolean
                   *d++ = 0;
                   if (*d == '$')
                      d = getenv (d + 1);        // Environment variable content
                   if (d)
-                  {
-                     xml_t e = xml_element_add (xml, c);
-                     e->json_single = 1;
-                     e->json_unquoted = 1;
-                     xml_element_set_content (e, d);
-                  }
+                     j_add_literal (json, c, d);
                } else if (*d == '$')
                {                // Name=$variable
                   *d++ = 0;
                   char *v = getenv (d);
                   if (v)
-                  {
-                     xml_t e = xml_element_add (xml, c);
-                     e->json_single = 1;
-                     xml_element_set_content (e, v);
-                  }
+                     j_add_string (json, c, v);
                } else if (*d == '@')
                {                // Name string from filename
                   *d++ = 0;
@@ -196,35 +174,28 @@ main (int argc, const char *argv[])
                   fclose (o);
                   if (val)
                   {
-                     xml_t e = xml_element_add (xml, c);
-                     e->json_single = 1;
-                     xml_element_set_content (e, val);
+                     j_add_string (json, c, val);
                      free (val);
                   }
                } else if (*d == ':')
                {                // Name object from filename
                   *d++ = 0;
-                  xml_t a = xml_tree_read_file (d);
-                  if (!a)
-                     a = xml_tree_read_file_json (d);
-                  if (!a)
-                     err (1, "Cannot read %s", d);
-                  xml_element_set_name (a, c);
-                  xml_t e = xml_element_attach (xml, a);
-                  e->json_single = 1;
-                  xml_tree_delete (a);
+                  j_t a = j_create ();
+                  const char *er = j_read_file (a, d);
+                  if (er)
+                     errx (1, "Cannot read %s: %s", d, er);
+                  j_attach (j_add_object (json, c), a);
+                  j_delete (a);
                } else if (!*d)
                {                // Name as variable
                   char *v = getenv (c);
                   if (v)
                   {
-                     xml_t e = xml_element_add (xml, c);
-                     e->json_single = 1;
-                     xml_element_set_content (e, v);
                      if (!strcmp (v, "true") || !strcmp (v, "false") || !strcmp (v, "null"))
-                        e->json_unquoted = 1;
+                        j_add_literal (json, c, v);
                      else if (*v)
-                     {
+                     {          // Does it look like a number
+                        char *val = v;
                         if (*v == '+' || *v == '-')
                            v++;
                         while (isdigit (*v))
@@ -242,16 +213,19 @@ main (int argc, const char *argv[])
                               v++;
                         }
                         if (!*v)
-                           e->json_unquoted = 1;
-                     }
+                           j_add_literal (json, c, val);
+                        else
+                           j_add_string (json, c, val);
+                     } else
+                        j_add_literal (json, c, "null");
                   }
 
                } else
                   errx (1, "Unknown arg [%s]", c);
             }
          }
-         xml_write_json (o, xml);
-         xml_tree_delete (xml);
+         j_write (json, o);
+         j_delete (json);
       }
    }
    fclose (o);

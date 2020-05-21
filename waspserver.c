@@ -23,7 +23,7 @@
 #include <err.h>
 #include <signal.h>
 #include <curl/curl.h>
-#include <axl.h>
+#include <ajl.h>
 #include <websocket.h>
 #include <pthread.h>
 
@@ -48,7 +48,7 @@ char *keyfile = quoted (KEY);
 char *keyfile = NULL;
 #endif
 #ifdef	CONNECT
-extern int CONNECT (const char *sid, char **id, xml_t head);
+extern int CONNECT (const char *sid, char **id, j_t head);
 #endif
 #ifdef	CONNECTSCRIPT
 char *connectscript = quoted (CONNECTSCRIPT);
@@ -89,7 +89,7 @@ struct q_s
 {                               // Simple queue
    volatile q_t *next;
    wasp_session_t *session;     // Session
-   xml_t head;                  // Head
+   j_t head;                  // Head
    size_t len;                  // data len
    const unsigned char *data;   // data
 };
@@ -274,7 +274,7 @@ unlink_channel (wasp_chanlink_t * l)
 }
 
 static char *
-wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, const unsigned char *data)
+wasp_script (wasp_session_t * s, const char *script, j_t head, size_t len, const unsigned char *data)
 {                               // Run script, logs any error, returns malloc'd stdout from script (if any) without newlines
    if (!script || !*script || !s)
       return NULL;              // No script to run
@@ -314,7 +314,7 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
          errx (1, "malloc");
    }
    // Data
-   xml_t xml = NULL;
+   j_t json=j_create();
    if (data)
    {
       int o = tmp ();
@@ -323,22 +323,22 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
       close (o);
       if (asprintf (env (), "FILE_MESSAGE=%s", tmpp[tmpn - 1]) < 0)
          errx (1, "malloc");
-      xml = xml_tree_parse_json ((char *) data, "json");        // We assume the null
+      const char *er=j_read_mem(json,data);
+      if(er)errx(1,"Cannot parse: %s",er);
    }
    char *v;
    if (head)
    {                            // headers
-      if ((v = xml_get (head, "@IP")) && *v && asprintf (env (), "REMOTE_ADDR=%s", v) < 0)
+      if ((v = j_get (head, "IP")) && *v && asprintf (env (), "REMOTE_ADDR=%s", v) < 0)
          errx (1, "malloc");
-      xml_t query = xml_find (head, "query");
+      j_t query = j_find (head, "query");
       if (query)
       {                         // Query data
-         if ((v = xml_element_content (query)) && *v && asprintf (env (), "QUERY_STRING=%s", v) < 0)
+         if ((v = j_val (query)) && *v && asprintf (env (), "QUERY_STRING=%s", v) < 0)
             errx (1, "malloc");
-         xml_attribute_t a = NULL;
-         while ((a = xml_attribute_next (query, a)))
+	 for(j_t a=j_first(query),a,a=j_next(a))
          {
-            if ((v = xml_attribute_content (a)) && asprintf (env (), "QUERY_%s=%s", xml_attribute_name (a), v) < 0)
+            if ((v = j_val (a)) && asprintf (env (), "QUERY_%s=%s", j_tag (a), v) < 0)
                errx (1, "malloc");
             char *p;
             for (p = envp[envn - 1]; *p && *p != '='; p++)
@@ -347,15 +347,14 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
          }
       }
       char *cookie = NULL;
-      xml_t http = xml_find (head, "http");
+      j_t http = j_find (head, "http");
       if (http)
       {                         // HTTP_ data
-         if ((v = xml_element_content (http)) && *v && asprintf (env (), "PATH_INFO=%s", v) < 0)
+         if ((v = j_val (http)) && *v && asprintf (env (), "PATH_INFO=%s", v) < 0)
             errx (1, "malloc");
-         xml_attribute_t a = NULL;
-         while ((a = xml_attribute_next (http, a)))
+	 for(j_t a=j_first(http);a;a=j_next(a))
          {
-            if ((v = xml_attribute_content (a)) && asprintf (env (), "HTTP_%s=%s", xml_attribute_name (a), v) < 0)
+            if ((v = j_val (a)) && asprintf (env (), "HTTP_%s=%s", j_tag (a), v) < 0)
                errx (1, "malloc");
             char *p;
             for (p = envp[envn - 1]; *p && *p != '='; p++)
@@ -389,13 +388,12 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
          }
       }
    }
-   if (xml)
+   if (json)
    {                            // Data passed
-      xml_attribute_t a = NULL;
-      while ((a = xml_attribute_next (xml, a)))
+      for(j_t a=j_first(json);a;a=j_next(a))
       {                         // Top level objects (direct, or as file)
-         char *n = xml_attribute_name (a);
-         char *v = xml_attribute_content (a);
+         char *n = j_tag (a);
+         char *v = j_val (a);
          int l = strlen (v);
          char *p;
          for (p = v; *p && *p != '\n'; p++);
@@ -415,7 +413,7 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
                errx (1, "malloc");
          }
       }
-      xml_t o = NULL;
+      j_t o = NULL;
       while ((o = xml_element_next (xml, o)))
       {                         // Sub objects as file
          char *n = xml_attribute_name (o);
@@ -447,8 +445,8 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
    if (child)
    {                            // We are parent
       // Some cleanup
-      if (xml)
-         xml_tree_delete (xml);
+      if (json)
+         j_delete (json);
       if (envp)
       {                         // Free env
          while (envn--)
@@ -520,7 +518,7 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
       script = strdup (script);
       type = strrchr (script, '$');
       *type++ = 0;
-      if (xml)
+      if (json)
       {                         // Check for script by type
          xml_attribute_t a = xml_attribute_by_name (xml, type);
          if (a)
@@ -544,8 +542,8 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
          }
       }
    }
-   if (xml)
-      xml_tree_delete (xml);
+   if (json)
+      j_delete (json);
    const char *tail = strrchr (script, '/');
    if (tail)
       tail++;
@@ -585,11 +583,11 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
 
 // main functions
 static void
-wasp_connect (wasp_session_t * s, xml_t head)
+wasp_connect (wasp_session_t * s, j_t head)
 {
    sessions = s;
    if (debug)
-      warnx ("%s connect %s", s->sid, xml_get (head, "@IP"));
+      warnx ("%s connect %s", s->sid, j_get (head, "IP"));
    link_channel (s, make_channel (s->sid));     // SID is logically a channel
    // Call connect
    char *r = NULL;
@@ -803,10 +801,10 @@ wasp_command (const char *target, const char *cmd, size_t len, const unsigned ch
 }
 
 static const char *
-wasp_web_command (xml_t head, size_t len, const unsigned char *data)
+wasp_web_command (j_5 head, size_t len, const unsigned char *data)
 {                               // Run command, return static error, consume data
    // Check localhost
-   char *v = xml_get (head, "@IP");
+   char *v = j_get (head, "IP");
    if (strcmp (v, "127.0.0.1") && strcmp (v, "::1"))
    {
       if (debug)
@@ -814,10 +812,10 @@ wasp_web_command (xml_t head, size_t len, const unsigned char *data)
       return "Invalid";
    }
    // Extract command and target
-   const char *cmd = xml_get (head, "http");
+   const char *cmd = j_get (head, "http");
    if (cmd && *cmd == '/')
       cmd++;
-   const char *target = xml_get (head, "query");
+   const char *target = j_get (head, "query");
    if (!target || !*target)
    {
       if (data)
@@ -874,7 +872,7 @@ q_thread (void *p)
          wasp_disconnect (q->session);
       statqueue--;
       if (q->head)
-         xml_tree_delete (q->head);
+         j_delete (q->head);
       if (q->data)
          free ((char *) q->data);
       free ((void *) q);
@@ -964,7 +962,7 @@ main (int argc, const char *argv[])
       pthread_detach (t);
    }
 
-   char *callback_locked (websocket_t * w, xml_t head, size_t datalen, const unsigned char *data)
+   char *callback_locked (websocket_t * w, j_t head, size_t datalen, const unsigned char *data)
    {                            // Single threaded callback from web sockets (wrapped in main mutex)
       if (!w && head)
       {                         // Direct run commands
@@ -974,7 +972,7 @@ main (int argc, const char *argv[])
          if (e)
             syslog (LOG_INFO, "Command failed %s", e);
          if (head)
-            xml_tree_delete (head);
+            j_delete (head);
          return (char *) e;
       }
       if (!w)
@@ -1034,7 +1032,7 @@ main (int argc, const char *argv[])
       return NULL;              // Good
    }
 
-   char *callback (websocket_t * w, xml_t head, size_t datalen, const unsigned char *data)
+   char *callback (websocket_t * w, j_t head, size_t datalen, const unsigned char *data)
    {                            // Callback function - do locking around real callback function
       pthread_mutex_lock (&mutex);
       char *e = callback_locked (w, head, datalen, data);
