@@ -89,7 +89,7 @@ struct q_s
 {                               // Simple queue
    volatile q_t *next;
    wasp_session_t *session;     // Session
-   j_t head;                    // Head
+   j_t head;                  // Head
    size_t len;                  // data len
    const unsigned char *data;   // data
 };
@@ -151,7 +151,7 @@ tokens (char *s, unsigned char n)
       err (1, "Bad read random");
    int r;
    for (r = 0; r < n; r++)
-      s[r] = JBASE32[s[r] & 31];
+      s[r] = BASE32[s[r] & 31];
    s[r] = 0;
    close (f);
    return s;
@@ -314,7 +314,7 @@ wasp_script (wasp_session_t * s, const char *script, j_t head, size_t len, const
          errx (1, "malloc");
    }
    // Data
-   j_t json = j_create ();
+   j_t json=j_create();
    if (data)
    {
       int o = tmp ();
@@ -323,21 +323,20 @@ wasp_script (wasp_session_t * s, const char *script, j_t head, size_t len, const
       close (o);
       if (asprintf (env (), "FILE_MESSAGE=%s", tmpp[tmpn - 1]) < 0)
          errx (1, "malloc");
-      const char *er = j_read_mem (json, (const char *) data);
-      if (er)
-         errx (1, "Cannot parse: %s", er);
+      const char *er=j_read_mem(json,data);
+      if(er)errx(1,"Cannot parse: %s",er);
    }
-   const char *v;
+   char *v;
    if (head)
    {                            // headers
-      if ((v = j_get (head, "ip")) && *v && asprintf (env (), "REMOTE_ADDR=%s", v) < 0)
+      if ((v = j_get (head, "IP")) && *v && asprintf (env (), "REMOTE_ADDR=%s", v) < 0)
          errx (1, "malloc");
       j_t query = j_find (head, "query");
       if (query)
       {                         // Query data
          if ((v = j_val (query)) && *v && asprintf (env (), "QUERY_STRING=%s", v) < 0)
             errx (1, "malloc");
-         for (j_t a = j_first (query); a; a = j_next (a))
+	 for(j_t a=j_first(query),a,a=j_next(a))
          {
             if ((v = j_val (a)) && asprintf (env (), "QUERY_%s=%s", j_tag (a), v) < 0)
                errx (1, "malloc");
@@ -353,7 +352,7 @@ wasp_script (wasp_session_t * s, const char *script, j_t head, size_t len, const
       {                         // HTTP_ data
          if ((v = j_val (http)) && *v && asprintf (env (), "PATH_INFO=%s", v) < 0)
             errx (1, "malloc");
-         for (j_t a = j_first (http); a; a = j_next (a))
+	 for(j_t a=j_first(http);a;a=j_next(a))
          {
             if ((v = j_val (a)) && asprintf (env (), "HTTP_%s=%s", j_tag (a), v) < 0)
                errx (1, "malloc");
@@ -391,49 +390,49 @@ wasp_script (wasp_session_t * s, const char *script, j_t head, size_t len, const
    }
    if (json)
    {                            // Data passed
-      for (j_t a = j_first (json); a; a = j_next (a))
-         if (j_isstring (a))
-         {                      // Top level objects (direct, or as file)
-            const char *n = j_tag (a);
-            const char *v = j_val (a);
-            int l = strlen (v);
-            const char *p;
-            for (p = v; *p && *p != '\n'; p++);
-            if (!*p && l < 256 && strncmp (v, "base64;", 7) && strncmp (n, "FILE_", 5))
-            {                   // As env
-               if (asprintf (env (), "%s=%s", n, v) < 0)
-                  errx (1, "malloc");
-            } else
-            {                   // As file
-               int f = tmp ();
-               if (write (f, v, l) != l)
-                  err (1, "Cannot write tmp file");
-               close (f);
-               if (!strncmp (n, "FILE_", 5))
-                  n += 5;       // Don't do it twice
-               if (asprintf (env (), "FILE_%s=%s", n, tmpp[tmpn - 1]) < 0)
-                  errx (1, "malloc");
-            }
+      for(j_t a=j_first(json);a;a=j_next(a))
+      {                         // Top level objects (direct, or as file)
+         char *n = j_tag (a);
+         char *v = j_val (a);
+         int l = strlen (v);
+         char *p;
+         for (p = v; *p && *p != '\n'; p++);
+         if (!*p && l < 256 && strncmp (v, "base64;", 7) && strncmp (n, "FILE_", 5))
+         {                      // As env
+            if (asprintf (env (), "%s=%s", n, v) < 0)
+               errx (1, "malloc");
+         } else
+         {                      // As file
+            int f = tmp ();
+            if (write (f, v, l) != l)
+               err (1, "Cannot write tmp file");
+            close (f);
+            if (!strncmp (n, "FILE_", 5))
+               n += 5;          // Don't do it twice
+            if (asprintf (env (), "FILE_%s=%s", n, tmpp[tmpn - 1]) < 0)
+               errx (1, "malloc");
          }
-      for (j_t o = j_first (json); o; o = j_next (o))
-         if (j_isobject (o))
-         {                      // Sub objects as file
-            const char *n = j_tag (o);
-            char *buf = NULL;
-            size_t l = 0;
-            FILE *b = open_memstream (&buf, &l);
-            j_write (o, b);
-            if (buf)
-            {
-               int f = tmp ();
-               if (write (f, buf, l) != (ssize_t) l)
-                  err (1, "Cannot write tmp file");
-               close (f);
-               if (asprintf (env (), "FILE_%s=%s", n, tmpp[tmpn - 1]) < 0)
-                  errx (1, "malloc");
-               free (buf);
-            }
+      }
+      j_t o = NULL;
+      while ((o = xml_element_next (xml, o)))
+      {                         // Sub objects as file
+         char *n = xml_attribute_name (o);
+         char *buf = NULL;
+         size_t l = 0;
+         FILE *b = open_memstream (&buf, &l);
+         xml_write_json (b, o);
+         fclose (b);
+         if (buf)
+         {
+            int f = tmp ();
+            if (write (f, buf, l) != (ssize_t) l)
+               err (1, "Cannot write tmp file");
+            close (f);
+            if (asprintf (env (), "FILE_%s=%s", n, tmpp[tmpn - 1]) < 0)
+               errx (1, "malloc");
+            free (buf);
          }
+      }
    }
    *env () = NULL;              // End
 
@@ -521,20 +520,24 @@ wasp_script (wasp_session_t * s, const char *script, j_t head, size_t len, const
       *type++ = 0;
       if (json)
       {                         // Check for script by type
-         const char *v = j_get (json, type);
-         if (v && *v)
+         xml_attribute_t a = xml_attribute_by_name (xml, type);
+         if (a)
          {
-            v = strdup (v);
-            const char *p = v;
-            while (isalnum (*p) || *p == '-' || *p == '_')
-               p++;
-            if (!*p)
-            {                   // Make script with tag
-               char *f;
-               if (asprintf (&f, "%s%s", script, v) < 0)
-                  errx (1, "malloc");
-               if (!access (f, X_OK))
-                  script = f;   // Can exec, use it
+            char *v = xml_attribute_content (a);
+            if (v && *v)
+            {
+               v = strdup (v);
+               char *p = v;
+               while (isalnum (*p) || *p == '-' || *p == '_')
+                  p++;
+               if (!*p)
+               {                // Make script with tag
+                  char *f;
+                  if (asprintf (&f, "%s%s", script, v) < 0)
+                     errx (1, "malloc");
+                  if (!access (f, X_OK))
+                     script = f;        // Can exec, use it
+               }
             }
          }
       }
@@ -584,7 +587,7 @@ wasp_connect (wasp_session_t * s, j_t head)
 {
    sessions = s;
    if (debug)
-      warnx ("%s connect %s", s->sid, j_get (head, "ip"));
+      warnx ("%s connect %s", s->sid, j_get (head, "IP"));
    link_channel (s, make_channel (s->sid));     // SID is logically a channel
    // Call connect
    char *r = NULL;
@@ -798,10 +801,10 @@ wasp_command (const char *target, const char *cmd, size_t len, const unsigned ch
 }
 
 static const char *
-wasp_web_command (j_t head, size_t len, const unsigned char *data)
+wasp_web_command (j_5 head, size_t len, const unsigned char *data)
 {                               // Run command, return static error, consume data
    // Check localhost
-   const char *v = j_get (head, "ip");
+   char *v = j_get (head, "IP");
    if (strcmp (v, "127.0.0.1") && strcmp (v, "::1"))
    {
       if (debug)
