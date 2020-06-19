@@ -25,6 +25,7 @@
 #include <curl/curl.h>
 #include <axl.h>
 #include <websocket.h>
+#include <malloc.h>
 #include <pthread.h>
 
 #define	RANDOM	"/dev/urandom"
@@ -154,6 +155,8 @@ static char *tokens(char *s, unsigned char n)
 
 static wasp_channel_t *find_channel(const char *cid)
 {                               // Find a channel, maybe make some hash logic some time
+   if (!cid || !*cid)
+      return NULL;
    wasp_channel_t *c;
    for (c = channels; c && strcmp(c->cid, cid); c = c->next);
    return c;
@@ -161,6 +164,8 @@ static wasp_channel_t *find_channel(const char *cid)
 
 static wasp_channel_t *make_channel(const char *cid)
 {
+   if (!cid || !*cid)
+      errx(1, "Bad make channel");
    wasp_channel_t *c = find_channel(cid);
    if (c)
       return c;
@@ -223,7 +228,7 @@ static void link_channel(wasp_session_t * s, wasp_channel_t * c)
       while (q > 0 && c->ws[q - 1])
          q--;
       if (!q--)
-         errx(1, "WTF, no null");
+         errx(1, "WTF, no null ws");
       c->ws[q] = s->ws;
       l->slot = q;
    }
@@ -328,12 +333,15 @@ static char *wasp_script(wasp_session_t * s, const char *script, xml_t head, siz
          xml_attribute_t a = NULL;
          while ((a = xml_attribute_next(query, a)))
          {
-            if ((v = xml_attribute_content(a)) && asprintf(env(), "QUERY_%s=%s", xml_attribute_name(a), v) < 0)
-               errx(1, "malloc");
-            char *p;
-            for (p = envp[envn - 1]; *p && *p != '='; p++)
-               if (!isalnum(*p))
-                  *p = '_';
+            if ((v = xml_attribute_content(a)))
+            {
+               if (asprintf(env(), "QUERY_%s=%s", xml_attribute_name(a), v) < 0)
+                  errx(1, "malloc");
+               char *p;
+               for (p = envp[envn - 1]; *p && *p != '='; p++)
+                  if (!isalnum(*p))
+                     *p = '_';
+            }
          }
       }
       char *cookie = NULL;
@@ -345,16 +353,19 @@ static char *wasp_script(wasp_session_t * s, const char *script, xml_t head, siz
          xml_attribute_t a = NULL;
          while ((a = xml_attribute_next(http, a)))
          {
-            if ((v = xml_attribute_content(a)) && asprintf(env(), "HTTP_%s=%s", xml_attribute_name(a), v) < 0)
-               errx(1, "malloc");
-            char *p;
-            for (p = envp[envn - 1]; *p && *p != '='; p++)
-               if (!isalnum(*p))
-                  *p = '_';
-               else
-                  *p = toupper(*p);     // Treat all HTTP as upper case
-            if (!strncmp(envp[envn - 1], "HTTP_COOKIE=", 12))
-               cookie = envp[envn - 1] + 12;
+            if ((v = xml_attribute_content(a)))
+            {
+               if (asprintf(env(), "HTTP_%s=%s", xml_attribute_name(a), v) < 0)
+                  errx(1, "malloc");
+               char *p;
+               for (p = envp[envn - 1]; *p && *p != '='; p++)
+                  if (!isalnum(*p))
+                     *p = '_';
+                  else
+                     *p = toupper(*p);  // Treat all HTTP as upper case
+               if (!strncmp(envp[envn - 1], "HTTP_COOKIE=", 12))
+                  cookie = envp[envn - 1] + 12;
+            }
          }
       }
       if (cookie)
@@ -575,7 +586,6 @@ static char *wasp_script(wasp_session_t * s, const char *script, xml_t head, siz
 // main functions
 static void wasp_connect(wasp_session_t * s, xml_t head)
 {
-   sessions = s;
    if (debug)
       warnx("%s connect %s", s->sid, xml_get(head, "@IP"));
    link_channel(s, make_channel(s->sid));       // SID is logically a channel
@@ -636,8 +646,11 @@ static void wasp_disconnect(wasp_session_t * s)
    *s->prev = s->next;
    if (s->id)
       free(s->id);
-   free(s);
+   s->prev = NULL;
+   s->next = NULL;
+   s->id = NULL;
    pthread_mutex_unlock(&sessionmutex);
+   free(s);
 }
 
 const char *wasp_command(const char *target, const char *cmd, size_t len, const unsigned char *data)
@@ -869,6 +882,7 @@ int main(int argc, const char *argv[])
 {
    int background = 0;
    int dump = 0;
+   int runtime = 0;
    {                            // POPT
       poptContext optCon;       // context for parsing command-line options
       const struct poptOption optionsTable[] = {
@@ -882,6 +896,7 @@ int main(int argc, const char *argv[])
          { "background", 0, POPT_ARG_NONE, &background, 0, "Debug",NULL},
          { "debug", 'v', POPT_ARG_NONE, &debug, 0, "Debug",NULL},
          { "dump", 0, POPT_ARG_NONE, &dump, 0, "WS Dump",NULL},
+         { "alarm", 'a', POPT_ARG_INT, &runtime, 0, "Run for specified time","secs"},
 	 POPT_AUTOHELP { }
 	 // *INDENT-ON*
       };
@@ -915,6 +930,8 @@ int main(int argc, const char *argv[])
             errx(1, "daemon");
    }
 
+   mallopt(M_CHECK_ACTION, 3);
+   //mallopt (M_MXFAST, 0);
    {                            // File limits - allow lots of connections at once
       struct rlimit l = {
       };
@@ -932,6 +949,12 @@ int main(int argc, const char *argv[])
          if (setrlimit(RLIMIT_NPROC, &l))
             syslog(LOG_INFO, "Could not increase threads");
       }
+#ifdef	MAXSTACK
+      l.rlim_cur = MAXSTACK;
+      l.rlim_max = MAXSTACK;
+      if (setrlimit(RLIMIT_STACK, &l))
+         syslog(LOG_INFO, "Could not set stack %d", MAXSTACK);
+#endif
    }
 
    pthread_mutex_init(&mutex, NULL);    // main mutex
@@ -991,6 +1014,7 @@ int main(int argc, const char *argv[])
          while (s->channels)
             unlink_channel(s->channels);
          s->ws = NULL;          // Web socket no longer valid, this is a disconnect
+         websocket_set_data(w, NULL);   // Avoid double disconnect
          pthread_mutex_unlock(&sessionmutex);
       }
       pthread_mutex_lock(&qmutex);
@@ -1029,7 +1053,10 @@ int main(int argc, const char *argv[])
    if (e)
       errx(1, "%s", e);
    // Main task has nothing much to do.
-   while (1)
-      sleep(1);
+   if (runtime)
+      sleep(runtime);
+   else
+      while (1)
+         sleep(1);
    return 0;
 }
