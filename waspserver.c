@@ -598,7 +598,7 @@ static void wasp_connect(wasp_session_t * s, xml_t head)
    if (!r)
    {                            // Failed
       syslog(LOG_INFO, "%s connect failed, disconnecting", s->sid);
-      const char *e = websocket_send_raw(1, &s->ws, 0, NULL);   // Sends disconnect
+      const char *e = websocket_send(1, &s->ws);   // Sends disconnect
       if (e)
          warnx("Bad disconnect %s", e);
       return;
@@ -684,11 +684,11 @@ const char *wasp_command(const char *target, const char *cmd, size_t len, const 
    if (!strcmp(cmd, "disconnect"))
    {
       if (data)
-         websocket_send_raw(t->max, t->ws, len, data);  // Send message before disconnect (consumes data)
-      return websocket_send_raw(t->max, t->ws, 0, NULL);        // Sends disconnects
+         websocket_send(t->max, t->ws, len:len, data:data);  // Send message before disconnect (consumes data)
+      return websocket_send(t->max, t->ws );        // Sends disconnects
    }
    if (!strcmp(cmd, "message"))
-      return websocket_send_raw(t->max, t->ws, len, data);      // Send message (consumes data)
+      return websocket_send(t->max, t->ws );      // Send message (consumes data)
    if (!strcmp(cmd, "clear") || !strcmp(cmd, "add"))
    {                            // Add
       if (!strcmp(cmd, "clear"))
@@ -1049,7 +1049,7 @@ int main(int argc, const char *argv[])
    }
 
    // Bind web sockets
-   const char *e = websocket_bind_raw(binding, NULL, NULL, NULL, certfile, keyfile, callback);
+   const char *e = websocket_bind(binding, certfile:certfile, keyfile:keyfile, xmlraw:callback);
    if (e)
       errx(1, "%s", e);
    // Main task has nothing much to do.
