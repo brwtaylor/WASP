@@ -1,0 +1,6 @@
+[submodule "websocket"]
+	path = websocket
+	url = https://github.com/revk/websocket
+[submodule "AXL"]
+	path = AXL
+	url = https://github.com/revk/AXL
