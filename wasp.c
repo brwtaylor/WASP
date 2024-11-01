@@ -63,7 +63,7 @@ main (int argc, const char *argv[])
    poptContext optCon;          // context for parsing command-line options
    {                            // POPT
       const struct poptOption optionsTable[] = {
-         {"target", 't', POPT_ARG_STRING, &exists, 0, "Target", "channel/id"},
+         {"target", 't', POPT_ARG_STRING, &target, 0, "Target", "channel/id"},
          {"json", 'j', POPT_ARG_STRING, &jsonfile, 0, "JSON send", "filename"},
          {"send", 's', POPT_ARG_STRING, &sendfile, 0, "Raw Send", "filename"},
          {"exists", 'e', POPT_ARG_NONE, &exists, 0, "Exists flag", NULL},
