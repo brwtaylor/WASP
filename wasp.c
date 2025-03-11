@@ -59,6 +59,11 @@ main (int argc, const char *argv[])
             waspport = p + 1;
          port = waspport;
       }
+      char *wasptls = getenv ("WASPTLS");
+      if (wasptls)
+      {
+         tls = 1;
+      }
    }
    poptContext optCon;          // context for parsing command-line options
    {                            // POPT
