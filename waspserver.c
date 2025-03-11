@@ -314,6 +314,10 @@ wasp_script (wasp_session_t * s, const char *script, xml_t head, size_t len, con
       errx (1, "malloc");
    if (s->id && asprintf (env (), "WASPID=%s", s->id) < 0)
       errx (1, "malloc");
+   if (keyfile && certfile) {
+      if (s->id && asprintf (env (), "WASPTLS=1") < 0)
+         errx(1, "malloc");
+   }
    if (s->ws)
    {
       unsigned long ping = websocket_ping (s->ws);
